@@ -138,8 +138,9 @@ HTML_TEMPLATE = """
 """
 
 
-@app.route("/")
-def index():
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def index(path):
     return render_template_string(HTML_TEMPLATE, cpu_thresh=CPU_THRESHOLD, ram_thresh=RAM_THRESHOLD)
 
 
