@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OS Process Monitoring Dashboard</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+    .stats { font-weight: bold; color: #a6e3a1; font-size: 1.1rem; }
+    .controls { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; align-items: center; }
+    input { padding: 8px 12px; border-radius: 6px; border: 1px solid #45475a; background: #313244; color: #fff; width: 260px; }
+    button { padding: 8px 14px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .btn-refresh { background: #89b4fa; color: #11111b; }
+    .btn-kill { background: #f38ba8; color: #11111b; padding: 5px 10px; }
+    table { width: 100%; border-collapse: collapse; background: #181825; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #313244; }
+    th { background: #11111b; color: #89b4fa; }
+    tr.high-usage { background: #4a1c24; color: #ffb4b4; }
+    .logs { margin-top: 20px; background: #11111b; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>System Process Monitoring & Management Dashboard</h2>
+    <div class="stats" id="sysStats">Total CPU: 0% | Total RAM: 0%</div>
+  </div>
+
+  <div class="controls">
+    <input type="text" id="searchBox" placeholder="Search process by name..." onkeyup="renderTable()" />
+    <button class="btn-refresh" onclick="fetchProcesses()">Refresh Now</button>
+    <span style="color:#f38ba8; margin-left:auto;">Alert Threshold: CPU &gt; {{ cpu_thresh }}% or RAM &gt; {{ ram_thresh }} MB</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>PID</th>
+        <th>Process Name</th>
+        <th>Status</th>
+        <th>CPU (%)</th>
+        <th>Memory (MB)</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="processBody"></tbody>
+  </table>
+
+  <div class="logs">
+    <strong>Termination Audit Log:</strong>
+    <ul id="logList"><li>No processes terminated yet.</li></ul>
+  </div>
+
+  <script>
+    let allProcesses = [];
+    let adminPin = null;
+
+    async function fetchProcesses() {
+      const res = await fetch('/api/processes');
+      const data = await res.json();
+      document.getElementById('sysStats').innerText = `Total CPU: ${data.total_cpu}% | Total RAM: ${data.total_ram}%`;
+      allProcesses = data.processes;
+      renderTable();
+      renderLogs(data.logs);
+    }
+
+    function renderTable() {
+      const query = document.getElementById('searchBox').value.toLowerCase();
+      const tbody = document.getElementById('processBody');
+      tbody.innerHTML = '';
+
+      allProcesses
+        .filter(p => p.name.toLowerCase().includes(query))
+        .forEach(p => {
+          const row = document.createElement('tr');
+          if (p.high_usage) row.classList.add('high-usage');
+          row.innerHTML = `
+            <td>${p.pid}</td>
+            <td>${p.name}</td>
+            <td>${p.status}</td>
+            <td>${p.cpu}</td>
+            <td>${p.memory}</td>
+            <td><button class="btn-kill" onclick="killProcess(${p.pid}, '${p.name}')">Terminate</button></td>
+          `;
+          tbody.appendChild(row);
+        });
+    }
+
+    function renderLogs(logs) {
+      const list = document.getElementById('logList');
+      if (!logs || logs.length === 0) return;
+      list.innerHTML = logs.map(l => `<li>${l}</li>`).join('');
+    }
+
+    async function killProcess(pid, name) {
+      if (!adminPin) {
+        adminPin = prompt("Enter Admin PIN (1234) to authorize termination:");
+        if (!adminPin) return;
+      }
+      if (!confirm(`Are you sure you want to terminate '${name}' (PID: ${pid})?`)) return;
+
+      const res = await fetch('/api/terminate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pid, pin: adminPin })
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        adminPin = null;
+        alert(result.message);
+      } else {
+        alert(result.message);
+        fetchProcesses();
+      }
+    }
+
+    fetchProcesses();
+    setInterval(fetchProcesses, 3000);
+  </script>
+</body>
+</html>
